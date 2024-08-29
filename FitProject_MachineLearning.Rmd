@@ -30,7 +30,7 @@ require(stats); require(graphics);require(ggplot2);require(GGally)
 
 ```
 
-# 1. Introduction
+# 1. Introduction.
 
 With the birth of wearable devices such as Jawbone Up, Nike FuelBand, and Fitbit, collecting extensive data on personal activity has become increasingly popular. These devices are central to quantified self-movement, where individuals routinely track their data to enhance their health, identify behavioral patterns, or simply out of interest in technology. While many users focus on quantifying the frequency of their activities, they often need to pay more attention to the quality of their performance.
 
