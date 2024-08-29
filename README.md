@@ -1,7 +1,7 @@
 # MachineLearningFitnessProject
  This project is to predict the manner in which individuals performed a specific exercise
-Project Objective
-The primary aim of this project is to predict how individuals performed a specific exercise, as represented by the "classe" variable in the training dataset. You can utilize any other available variables to aid in this prediction. The project deliverables include:
+### Project Objective:
+The primary aim of this project is to predict how individuals performed a specific exercise, as represented by the "classe" variable in the training dataset. You can utilize any other available variables to aid in this prediction. The project deliverers include:
 
 A detailed report outlining the model-building process.
 An explanation of how cross-validation was implemented.
