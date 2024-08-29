@@ -1,0 +1,403 @@
+---
+title: "Fit_Project_MachineLearning"
+author: "Nancy Pulido"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+```
+
+```{r libraries, include=FALSE}
+library(caret)
+library(kernlab)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(manipulate)
+library(Hmisc)
+library(pastecs)
+library(MASS)
+library(broom)
+library(tidyverse)
+library(RANN)
+library(AppliedPredictiveModeling)
+require(stats); require(graphics);require(ggplot2);require(GGally)
+
+```
+
+# 1. Introduction
+
+With the birth of wearable devices such as Jawbone Up, Nike FuelBand, and Fitbit, collecting extensive data on personal activity has become increasingly popular. These devices are central to quantified self-movement, where individuals routinely track their data to enhance their health, identify behavioral patterns, or simply out of interest in technology. While many users focus on quantifying the frequency of their activities, they often need to pay more attention to the quality of their performance.
+
+This project aims to bridge that gap by analyzing data collected from six participants' accelerometers placed in their belts, forearms, arms, and dumbbells. These participants performed instructed barbell lifts correctly and incorrectly in five distinct ways. 
+
+
+# 2. Data Cleaning and Preprocessing
+
+### Raw Data
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+url <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTest="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# Load data
+#R to interpret any empty strings (""), the string "NA", or the string "NULL" as missing values (NA).
+dataRaw <- read.csv(url,na.strings = c(" ", "NA", "NULL"))
+dataRawTest<-read.csv(urlTest,na.strings = c(" ", "NA", "NULL"))
+# Handle missing values and #DIV/0! values
+#replace NA values in numeric columns with the column's mean and to replace #DIV/0! entries with NA.
+data <- dataRaw %>%
+  mutate_if(is.numeric, ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)) %>%
+  mutate_if(is.numeric, ~ ifelse(. == "#DIV/0!", NA, .))
+
+dataTest<-dataRawTest %>%
+  mutate_if(is.numeric, ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)) %>%
+  mutate_if(is.numeric, ~ ifelse(. == "#DIV/0!", NA, .))
+
+# Remove duplicates
+data <- data[!duplicated(data), ]
+dataTest <- dataTest[!duplicated(dataTest), ]
+
+#remove "X"
+data<-data %>% dplyr::select(-X )
+dataTest<-dataTest %>% dplyr::select(-X )
+
+
+#colSums(is.na(data))
+```
+
+### mean and sd raw data
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+print("magnet_arm_x before dataRaw")
+print(paste0("mean_magnet_arm_x: ", mean(dataRaw$magnet_arm_x)))
+print(paste0("SD_magnet_arm_x: ", sd(dataRaw$magnet_arm_x)))
+```
+
+
+```{r echo=FALSE,include=FALSE ,message=FALSE}
+colSelction<-as.vector(c("classe", "_arm"))
+df_arm<- dplyr::select(data,contains(colSelction))%>%
+        dplyr::group_by(classe)
+
+summary_df <- df_arm %>% 
+  summarise_all(mean, na.rm = TRUE)
+
+
+
+kable(t(summary_df),caption = "Raw Data - arm sensor - before imputation",scroll=TRUE)%>%
+  kable_styling(bootstrap_options = "striped", full_width = F) %>%
+  row_spec(22, background = "lightblue")
+
+#graphics 
+
+RawDataPlot <- ggplot(df_arm, aes(magnet_arm_x,fill = classe))
+RawDataPlot + stat_summary(aes(y = classe), fun = "mean", geom = "bar")+
+  labs(title = "Classe vs Magnet_arm_x Mean",
+         subtitle = "Magnet_arm_x Mean per classe type")
+```
+
+# 3. Pre-Processing
+Preprocessing the data is crucial to ensure the model's accuracy and performance. The following steps were taken:
+
+Removal of Near-Zero Variance Predictors: Variables with very little variance were removed as they provide little to no information for model training.
+Handling Missing Data: Columns with excessive missing values (more than 50% NA) were excluded from the dataset.
+Removing Irrelevant Columns: Columns like user_name, raw_timestamp_part_1, raw_timestamp_part_2, and cvtd_timestamp were removed as they don't contribute to predicting "classe".
+Factorizing the Target Variable: The "classe" variable was converted to a factor to ensure it was treated as a categorical variable.
+
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Scale and normalize
+#scale and normalize numeric columns in both the training and testing datasets.
+
+cleanData <- data %>%mutate_if(is.numeric, ~ scale(.))
+cleanDataTest <- dataTest %>%mutate_if(is.numeric, ~ scale(.))
+
+#testData <- testData %>%mutate_if(is.numeric, ~ scale(.))
+# Remove near-zero variance features to reduce dimensionality
+nzv_features <- nearZeroVar(cleanData) # Returns the indices of NZV features
+nzv_featuresTest <- nearZeroVar(cleanDataTest) # Returns the indices of NZV features
+
+
+# Exclude NZV features from data
+filteredDescr <- cleanData[, -nzv_features]
+filteredDescrTest <- cleanDataTest[, -nzv_featuresTest]
+
+print("Pre - processed data - Dimentions")
+dim(filteredDescr)
+print("Rows  Variables")
+
+
+
+```
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Encode categorical variables
+filteredDescr$classe <- factor(filteredDescr$classe)
+
+#testData$classe <- factor(testData$classe)
+
+```
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# remove not usable columns and group data by classe
+columnsToRemove<-c("user_name","cvtd_timestamp")
+filteredDescr<- filteredDescr[,!names(filteredDescr) %in% columnsToRemove]%>%
+        dplyr::group_by(classe)
+#%>%dplyr::select(contains(c("_arm","classe")))
+
+filteredDescrTest<- filteredDescrTest[,!names(filteredDescrTest) %in% columnsToRemove]
+ #no classe variable       
+
+```
+
+### mean and sd pre-processed data
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+print("magnet_arm_x before pre-process data")
+print(paste0("mean_magnet_arm_x: ", mean(filteredDescr$magnet_arm_x)))
+print(paste0("SD_magnet_arm_x: ", sd(filteredDescr$magnet_arm_x)))
+```
+
+```{r echo=FALSE,include=FALSE ,message=FALSE}
+
+colSelction<-as.vector(c("classe", "_arm"))
+df_arm0<- dplyr::select(filteredDescr,contains(colSelction))%>%
+        dplyr::group_by(classe)
+
+summary_df0 <- df_arm0 %>% 
+  summarise_all(mean, na.rm = TRUE)
+
+
+
+kable(t(summary_df0),caption = "pre-processed data",scroll=TRUE)%>%
+  kable_styling(bootstrap_options = "striped", full_width = F) %>%
+  row_spec(12, background = "lightblue")
+
+#graphics 
+
+d1 <- ggplot(df_arm0, aes(magnet_arm_x,fill = classe))
+d1 + stat_summary(aes(y = classe), fun = "mean", geom = "bar")+
+  labs(title = "Classe vs Magnet_arm_x Mean - pre-processed data",
+         subtitle = "Magnet_arm_x Mean per classe type")
+```
+
+# 4. Data Splitting 
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Train a Random Forest model
+set.seed(123)
+trainIndex <- createDataPartition(filteredDescr$classe, p = 0.7, list = FALSE)
+trainData <- filteredDescr[trainIndex, ]
+testData <- filteredDescr[-trainIndex, ]
+
+#colSums(is.na(cleanData))
+
+
+```
+
+## Predictors and Data Reduction: 
+Improves model stability by removing redundant information. Highly correlated predictors can cause issues like multicollinearity, which can affect the stability and interpretability of your model
+
+Correlation Matrix: Helps to understand the relationships between numeric predictors. findCorrelation Function: Efficiently identifies and removes highly correlated predictors based on a specified threshold. Data Reduction: Improves model stability by removing redundant information.
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+
+correlation_matrix <- cor(trainData[, -ncol(trainData)]) # Exclude the target variable 'classe'
+ high_cor <- findCorrelation(correlation_matrix, cutoff = 0.9)
+ 
+ # List of predictors to remove
+ correlated_predictorsList <- names(trainData)[high_cor]
+print("Correlates Predictors")
+
+print(kable(as.vector(correlated_predictorsList),caption = "highly correlated variables"))
+
+# Remove the correlated predictors from the dataset
+trainData_reduced <- trainData[, -high_cor]
+
+# Optionally, apply the same to the test set to maintain consistency
+testData_reduced <- testData[, -high_cor]
+
+# Recalculate the correlation matrix
+cor_matrix_reduced <- cor(trainData_reduced[, -ncol(trainData_reduced)])
+
+print("correlation after highly correlated variables")
+
+# Check if any correlations are above the threshold
+summary(cor_matrix_reduced[upper.tri(cor_matrix_reduced)])
+
+
+```
+
+# 5. Modeling
+
+## Random Forest
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Define the training control
+RF_train_control <- trainControl(method = "cv", number = 10)
+
+# Train the Random Forest model
+rf_model <- train(classe~ ., data = trainData, method = "rf", trControl = RF_train_control)
+
+# View the model summary
+print(rf_model)
+```
+
+
+
+## Gradient Boosting
+
+```{r echo=FALSE,include=TRUE ,message=FALSE, warning=FALSE}
+# Train the GBM model
+GB_train_control <- trainControl(method = "cv", number = 10, verboseIter = FALSE)
+
+set.seed(123)
+gbm_model <- train(classe ~ ., data = trainData, 
+                   method = "gbm", 
+                   trControl = GB_train_control,
+                   verbose = FALSE)
+
+# Print the model details
+print(gbm_model)
+
+# Predict on test data
+gbm_predictions <- predict(gbm_model, newdata = testData)
+
+# Evaluate the model
+confusionMatrix(gbm_predictions, testData$classe)
+```
+
+## Support Vector Machine (SVM) Implementation
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Train the SVM model with radial kernel
+SMV_train_control <- trainControl(method = "cv", number = 10, verboseIter = FALSE)
+
+set.seed(123)
+svm_model <- train(classe ~ ., data = trainData, 
+                   method = "svmRadial", 
+                   trControl = SMV_train_control,
+                   tuneLength = 10)
+
+# Print the model details
+#print(svm_model)
+
+# Predict on test data
+svm_predictions <- predict(svm_model, newdata = testData)
+
+# Evaluate the model
+confusionMatrix(svm_predictions, testData$classe)
+```
+
+For this multiclass classification problem, several models could be considered. A Random Forest model was selected due to its robustness, ability to handle large datasets with higher dimensionality, and relatively minimal tuning requirements. The model's ability to handle correlated features also made it an ideal choice for this dataset.
+
+The model was trained using the caret package with a 10-fold cross-validation strategy to ensure the model's performance was robust and generalizable.
+
+Cross-Validation: This technique divides the training data into 10 parts, trains the model on 9 parts, and validates it on the remaining part. This process is repeated 10 times, with each part serving as the validation set once. The results are averaged to provide an estimate of model performance on unseen data.
+
+
+
+## Models evaluation
+ Here the comparison of the 3 selected models is presented. 
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Compare different models
+models <- list(rf = rf_model, svm = svm_model, gbm = gbm_model)
+resamples <- resamples(models)
+summary(resamples)
+```
+
+# 6. Model Evaluation - Random Forest
+The Random Forest model's performance was evaluated using the test set, which was not used during training.
+
+### test set -validation random forest 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Predict on the test data
+predictions <- predict(rf_model, newdata = testData)
+
+# Confusion matrix to evaluate accuracy
+cm<- confusionMatrix(predictions, testData$classe)
+
+cm_df <- as.data.frame(cm$table)
+
+# Plot the confusion matrix
+ggplot(data = cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  theme_minimal() +
+  labs(title = "Confusion Matrix", x = "Actual", y = "Predicted")
+
+# Extract resampling results
+resamples_rf <- rf_model$resample
+
+# Plot the accuracy for each fold
+ggplot(resamples_rf, aes(x = Resample, y = Accuracy)) +
+  geom_point(color = "blue", size = 3) +
+  geom_line(aes(group = 1), color = "blue") +
+  theme_minimal() +
+  labs(title = "Accuracy Across Cross-Validation Folds",
+       x = "Fold", y = "Accuracy")
+```
+Confusion Matrix: This provides a detailed breakdown of the model's performance across all classes, showing how often predictions were correct versus incorrect.
+Accuracy: The overall accuracy of the model was derived from the confusion matrix. The model's performance was strong, indicating effective classification of the different exercise forms.
+
+
+### View feature importance
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+importance <- varImp(rf_model)
+plot(importance,top = 20, main = "Top 20 Feature Importance - Random Forest")
+
+```
+# Summary of the Visualizations:
+Feature Importance Plot: This plot will help you understand which features contributed most to the model’s predictions. Higher importance values indicate more influential features.
+Confusion Matrix Visualization: This heatmap-style visualization will clearly show the distribution of correct and incorrect predictions, making it easier to spot any misclassification patterns.
+Accuracy Plot from Cross-Validation: This plot will show how the model's accuracy varied across different cross-validation folds, helping assess its consistency.
+
+
+
+
+### Expected Out-of-Sample Error
+The expected out-of-sample error was estimated using the cross-validation results. Since cross-validation provides an average performance measure across different subsets of the training data, it gives a reliable estimate of how the model will perform on completely unseen data.
+
+### Prediction on New Data - 20 new sets using Random Forest 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Split data into 20 sets
+sets <- split(filteredDescr, sample(rep(1:20, nrow(data))))
+
+# Train and predict on each set
+results <- lapply(sets, function(x) {
+  # Trained model
+  
+  # Make predictions
+  predictions <- predict(rf_model, x)
+  
+  # Return predictions and performance metrics
+  list(predictions = predictions, accuracy = confusionMatrix(predictions, x$classe)$overall[1])
+  
+})
+# Evaluate performance across all sets
+accuracies <- sapply(results, function(x) x$accuracy)
+mean_accuracy <- mean(accuracies)
+
+kable(accuracies,caption = "accuracies")
+kable(mean_accuracy,caption = "mean accuracy")
+```
+
+
+7. Predictions - test 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+ predict(rf_model,newdata=filteredDescrTest)
+
+```
+8. Conclusion. 
+
+In this analysis, a Random Forest model was built using the caret package to predict the "classe" variable from a dataset of wearable device readings during exercise. The model was carefully trained and validated using cross-validation to ensure it generalizes well to unseen data. The expected out-of-sample error was estimated based on cross-validation results, and the model was evaluated on a test set, showing strong performance. This approach provides a reliable method for predicting exercise form based on sensor data.
+
