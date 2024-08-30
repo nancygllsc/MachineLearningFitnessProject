@@ -1,10 +1,10 @@
 ---
 title: "Fit_Project_MachineLearning"
-author: "Nancy Pulido"
+author: "Nancy"
 date: "`r Sys.Date()`"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -214,6 +214,24 @@ Accuracy Plot from Cross-Validation: This plot will show how the model's accurac
 
 ### Expected Out-of-Sample Error
 The expected out-of-sample error was estimated using the cross-validation results. Since cross-validation provides an average performance measure across different subsets of the training data, it gives a reliable estimate of how the model will perform on completely unseen data.
+Expected Out-of-Sample Error Estimate: The Random Forest model was evaluated using 10-fold cross-validation. The average accuracy across the folds was approximately < 5%. Therefore, the expected out-of-sample error, which reflects the error rate when the model is applied to new, unseen data, is estimated to be around 0.008%. 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Extract the accuracy from the cross-validation results
+cv_results <- rf_model$resample
+
+# Calculate the mean accuracy from cross-validation
+mean_accuracy <- mean(cv_results$Accuracy)
+
+# Calculate the out-of-sample error
+expected_out_of_sample_error <- 1 - mean_accuracy
+
+print("expected out of sample_error")
+expected_out_of_sample_error
+
+print("mean accuracy")
+mean_accuracy
+
+```
 
 ### Prediction on New Data - 20 new sets using Random Forest 
 ```{r echo=FALSE,include=TRUE ,message=FALSE}
