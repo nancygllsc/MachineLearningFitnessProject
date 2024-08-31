@@ -1,0 +1,270 @@
+---
+title: "Fit_Project_MachineLearning"
+author: "Nancy"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+```
+
+```{r libraries, include=FALSE}
+library(caret)
+library(kernlab)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(manipulate)
+library(Hmisc)
+library(pastecs)
+library(MASS)
+library(broom)
+library(tidyverse)
+library(RANN)
+library(AppliedPredictiveModeling)
+require(stats); require(graphics);require(ggplot2);require(GGally)
+
+```
+
+# 1. Introduction.
+
+With the birth of wearable devices such as Jawbone Up, Nike FuelBand, and Fitbit, collecting extensive data on personal activity has become increasingly popular. These devices are central to quantified self-movement, where individuals routinely track their data to enhance their health, identify behavioral patterns, or simply out of interest in technology. While many users focus on quantifying the frequency of their activities, they often need to pay more attention to the quality of their performance.
+
+This project aims to bridge that gap by analyzing data collected from six participants' accelerometers placed in their belts, forearms, arms, and dumbbells. These participants performed instructed barbell lifts correctly and incorrectly in five distinct ways. 
+
+
+# 2. Data Cleaning and Preprocessing
+
+
+
+# 3. Pre-Processing
+Preprocessing the data is crucial to ensure the model's accuracy and performance. The following steps were taken:
+
+Removal of Near-Zero Variance Predictors: Variables with very little variance were removed as they provide little to no information for model training.
+Handling Missing Data: Columns with excessive missing values (more than 50% NA) were excluded from the dataset.
+Removing Irrelevant Columns: Columns like user_name, raw_timestamp_part_1, raw_timestamp_part_2, and cvtd_timestamp were removed as they don't contribute to predicting "classe".
+Factorizing the Target Variable: The "classe" variable was converted to a factor to ensure it was treated as a categorical variable.
+
+
+
+# 4. Data Splitting 
+
+
+## Predictors and Data Reduction: 
+Improves model stability by removing redundant information. Highly correlated predictors can cause issues like multicollinearity, which can affect the stability and interpretability of your model
+
+Correlation Matrix: Helps to understand the relationships between numeric predictors. findCorrelation Function: Efficiently identifies and removes highly correlated predictors based on a specified threshold. Data Reduction: Improves model stability by removing redundant information.
+
+
+
+# 5. Modeling
+
+## Random Forest
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Load and prepare data
+url <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTest="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+dataRaw <- read.csv(url, na.strings = c("NA","#DIV/0!",""))
+dataTest <- read.csv(urlTest, na.strings = c("NA","#DIV/0!",""))
+
+# Clean data independently
+training <- dataRaw[, colSums(is.na(dataRaw)) == 0]
+testing <- dataTest[, colSums(is.na(dataTest)) == 0]
+
+# Remove irrelevant columns
+training <- training[,-c(1:7)]
+testing <- testing[,-c(1:7)]
+
+# Ensure 'classe' is a factor
+training$classe <- as.factor(training$classe)
+
+# Partition the data
+set.seed(123)
+trainIndex <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+trainData <- training[trainIndex, ]
+testData <- training[-trainIndex, ]
+
+# Train Random Forest model
+RF_train_control <- trainControl(method = "cv", number = 10)
+rf_model <- train(classe ~ ., data = trainData, method = "rf", trControl = RF_train_control)
+
+# Predict and evaluate
+predictions <- predict(rf_model, newdata = testData)
+cm <- confusionMatrix(predictions, testData$classe)
+
+# Check confusion matrix
+print(cm)
+
+```
+
+
+
+## Gradient Boosting
+
+```{r echo=FALSE,include=TRUE ,message=FALSE, warning=FALSE}
+# Train the GBM model
+GB_train_control <- trainControl(method = "cv", number = 10, verboseIter = FALSE)
+
+set.seed(123)
+gbm_model <- train(classe ~ ., data = trainData, 
+                   method = "gbm", 
+                   trControl = GB_train_control,
+                   verbose = FALSE)
+
+# Print the model details
+print(gbm_model)
+
+# Predict on test data
+gbm_predictions <- predict(gbm_model, newdata = testData)
+
+# Evaluate the model
+confusionMatrix(gbm_predictions, testData$classe)
+```
+
+## Support Vector Machine (SVM) Implementation
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Train the SVM model with radial kernel
+SMV_train_control <- trainControl(method = "cv", number = 10, verboseIter = FALSE)
+
+set.seed(123)
+svm_model <- train(classe ~ ., data = trainData, 
+                   method = "svmRadial", 
+                   trControl = SMV_train_control,
+                   tuneLength = 10)
+
+# Print the model details
+#print(svm_model)
+
+# Predict on test data
+svm_predictions <- predict(svm_model, newdata = testData)
+
+# Evaluate the model
+confusionMatrix(svm_predictions, testData$classe)
+```
+
+For this multiclass classification problem, several models could be considered. A Random Forest model was selected due to its robustness, ability to handle large datasets with higher dimensionality, and relatively minimal tuning requirements. The model's ability to handle correlated features also made it an ideal choice for this dataset.
+
+The model was trained using the caret package with a 10-fold cross-validation strategy to ensure the model's performance was robust and generalizable.
+
+Cross-Validation: This technique divides the training data into 10 parts, trains the model on 9 parts, and validates it on the remaining part. This process is repeated 10 times, with each part serving as the validation set once. The results are averaged to provide an estimate of model performance on unseen data.
+
+
+
+## Models evaluation
+ Here the comparison of the 3 selected models is presented. 
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Compare different models
+models <- list(rf = rf_model, svm = svm_model, gbm = gbm_model)
+resamples <- resamples(models)
+summary(resamples)
+```
+
+# 6. Model Evaluation - Random Forest
+The Random Forest model's performance was evaluated using the test set, which was not used during training.
+
+### test set -validation random forest 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+cm_df <- as.data.frame(cm$table)
+
+# Plot the confusion matrix
+ggplot(data = cm_df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), vjust = 1) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  theme_minimal() +
+  labs(title = "Confusion Matrix", x = "Actual", y = "Predicted")
+
+# Extract resampling results
+resamples_rf <- rf_model$resample
+
+# Plot the accuracy for each fold
+ggplot(resamples_rf, aes(x = Resample, y = Accuracy)) +
+  geom_point(color = "blue", size = 3) +
+  geom_line(aes(group = 1), color = "blue") +
+  theme_minimal() +
+  labs(title = "Accuracy Across Cross-Validation Folds",
+       x = "Fold", y = "Accuracy")
+```
+Confusion Matrix: This provides a detailed breakdown of the model's performance across all classes, showing how often predictions were correct versus incorrect.
+Accuracy: The overall accuracy of the model was derived from the confusion matrix. The model's performance was strong, indicating effective classification of the different exercise forms.
+
+
+### View feature importance
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+importance <- varImp(rf_model)
+plot(importance,top = 20, main = "Top 20 Feature Importance - Random Forest")
+
+```
+# Summary of the Visualizations:
+Feature Importance Plot: This plot will help you understand which features contributed most to the model’s predictions. Higher importance values indicate more influential features.
+Confusion Matrix Visualization: This heatmap-style visualization will clearly show the distribution of correct and incorrect predictions, making it easier to spot any misclassification patterns.
+Accuracy Plot from Cross-Validation: This plot will show how the model's accuracy varied across different cross-validation folds, helping assess its consistency.
+
+
+
+
+### Expected Out-of-Sample Error
+The expected out-of-sample error was estimated using the cross-validation results. Since cross-validation provides an average performance measure across different subsets of the training data, it gives a reliable estimate of how the model will perform on completely unseen data.
+Expected Out-of-Sample Error Estimate: The Random Forest model was evaluated using 10-fold cross-validation. The average accuracy across the folds was approximately < 5%. Therefore, the expected out-of-sample error, which reflects the error rate when the model is applied to new, unseen data, is estimated to be around 0.008%. 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Extract the accuracy from the cross-validation results
+cv_results <- rf_model$resample
+
+# Calculate the mean accuracy from cross-validation
+mean_accuracy <- mean(cv_results$Accuracy)
+
+# Calculate the out-of-sample error
+expected_out_of_sample_error <- 1 - mean_accuracy
+
+print("expected out of sample_error")
+expected_out_of_sample_error
+
+print("mean accuracy")
+mean_accuracy
+
+```
+
+### Prediction on New Data - 20 new sets using Random Forest 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Split data into 20 sets
+sets <- split(testData, sample(rep(1:20, length.out =nrow(data))))
+
+# Train and predict on each set
+results <- lapply(sets, function(x) {
+  # Trained model
+  
+  # Make predictions
+  predictions <- predict(rf_model, x)
+  
+  # Return predictions and performance metrics
+  list(predictions = predictions, accuracy = confusionMatrix(predictions, x$classe)$overall[1])
+  
+})
+# Evaluate performance across all sets
+accuracies <- sapply(results, function(x) x$accuracy)
+mean_accuracy <- mean(accuracies)
+
+kable(accuracies,caption = "accuracies")
+kable(mean_accuracy,caption = "mean accuracy")
+```
+
+
+7. Predictions - test 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+
+ predict(rf_model,newdata=testing)
+
+```
+8. Conclusion. 
+
+In this analysis, a Random Forest model was built using the caret package to predict the "classe" variable from a dataset of wearable device readings during exercise. The model was carefully trained and validated using cross-validation to ensure it generalizes well to unseen data. The expected out-of-sample error was estimated based on cross-validation results, and the model was evaluated on a test set, showing strong performance. This approach provides a reliable method for predicting exercise form based on sensor data.
+

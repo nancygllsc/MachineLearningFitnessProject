@@ -1,0 +1,188 @@
+---
+title: "Practical Machine Learning Project"
+author: "Steven Myers"
+date: "September 17, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. 
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+The information is available from the website here: http://groupware.les.inf.puc-rio.br/har
+
+
+## Load Packages and Data Preparation
+
+```{r echo=TRUE, message = FALSE, warning=FALSE}
+library(caret)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(repmis)
+library(corrplot)
+
+
+download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv','pml-training.csv' )
+download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv','pml-testing.csv')
+
+trainingset <- read.csv('pml-training.csv',
+                     header = TRUE,
+                     sep = ",",
+                     na.strings = c("NA", "#DIV/0!"))
+
+testingset <- read.csv('pml-testing.csv',
+                     header = TRUE,
+                     sep = ",",
+                     na.strings = c("NA", "#DIV/0!"))
+```
+
+```{r echo=FALSE}
+library(caret)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(repmis)
+library(corrplot)
+
+
+download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv','pml-training.csv' )
+download.file('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv','pml-testing.csv')
+
+trainingset <- read.csv('pml-training.csv',
+                     header = TRUE,
+                     sep = ",",
+                     na.strings = c("NA", "#DIV/0!"))
+
+testingset <- read.csv('pml-testing.csv',
+                     header = TRUE,
+                     sep = ",",
+                     na.strings = c("NA", "#DIV/0!"))
+```
+
+## Subsetting the Data
+
+We need to limit our analysis to columns that do not have near-zero variance, don't consist primarily of NA's, and make sense in our prediction model.
+
+```{r echo=TRUE}
+CorrectSensor <- grepl("classe|belt|arm|dumbell", names(trainingset))
+
+trainset <- trainingset[,CorrectSensor]
+testset <- testingset[,CorrectSensor]
+
+colswithoutna = colSums(is.na(trainset)) == 0
+trainset <- trainset[,colswithoutna]
+testset <- testset[,colswithoutna]
+
+```
+
+```{r echo=FALSE}
+CorrectSensor <- grepl("classe|belt|arm|dumbell", names(trainingset))
+
+trainset <- trainingset[,CorrectSensor]
+testset <- testingset[,CorrectSensor]
+
+colswithoutna = colSums(is.na(trainset)) == 0
+trainset <- trainset[,colswithoutna]
+testset <- testset[,colswithoutna]
+
+```
+
+## Visualize the Correlations
+
+Ideally we would have minimal correlation between our variables.  The following correlation plot shows that we can proceed with the current variables and not take other measures.
+
+```{r echo=FALSE}
+corrPlot <- cor(trainset[, -length(names(trainset))])
+corrplot(corrPlot, method="color")
+
+```
+
+## Slicing the training data set
+
+``` {r echo = FALSE}
+set.seed(20102) 
+inTrain <- createDataPartition(trainset$classe, p=0.75, list=F)
+trainset <- trainset[inTrain, ]
+testtrainset <- trainset[-inTrain, ]
+
+```
+
+``` {r echo = TRUE}
+set.seed(20102) 
+inTrain <- createDataPartition(trainset$classe, p=0.75, list=F)
+trainset <- trainset[inTrain, ]
+testtrainset <- trainset[-inTrain, ]
+
+```
+
+
+## Modeling the Data
+
+We will do a random forest model with this data.  This is the best model for our situation because will automatically choose the important variables for us while also controlling for outliers and correlated variables.  I will do a 3-fold cross validation when applying this algorithm.
+
+```{r echo=TRUE}
+RandomForestControl <- trainControl(method="cv", 3)
+RandomForestModel <- train(classe ~ ., data=trainset, method="rf", trControl=RandomForestControl, ntree=200)
+RandomForestModel
+```
+
+```{r echo=FALSE}
+RandomForestControl <- trainControl(method="cv", 3)
+RandomForestModel <- train(classe ~ ., data=trainset, method="rf", trControl=RandomForestControl, ntree=200)
+```
+
+Now we measure the performance model on the validation test set.
+
+```{r echo=TRUE}
+
+RandomForestPredict <- predict(RandomForestModel, testtrainset)
+
+
+acc <- postResample(RandomForestPredict, testtrainset$classe)
+acc
+outofsampleerror <- 1 - as.numeric(confusionMatrix(testtrainset$classe, RandomForestPredict)$overall[1])
+outofsampleerror
+
+```
+
+
+```{r echo=FALSE}
+RandomForestPredict <- predict(RandomForestModel, testtrainset)
+
+acc <- postResample(RandomForestPredict, testtrainset$classe)
+acc
+outofsampleerror <- 1 - as.numeric(confusionMatrix(testtrainset$classe, RandomForestPredict)$overall[1])
+outofsampleerror
+
+```
+
+The estimated accuracy of the model is 100% and estimated out of sample error is 0%.  Although it seems as though it might be overfitted to our data, it also seems that our model is a good representation of the population.
+
+## Predicting the Test Set
+
+Now I'll apply the model to the original testing data set.
+
+```{r echo=TRUE}
+result <- predict(RandomForestModel, testset)
+
+result
+```
+
+## Visualization of the Model
+
+``` {r echo = TRUE}
+treeModel <- rpart(classe ~ ., data=trainset, method="class")
+rpart.plot(treeModel) # fast plot
+```
+
