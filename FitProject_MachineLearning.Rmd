@@ -25,6 +25,7 @@ library(MASS)
 library(broom)
 library(tidyverse)
 library(RANN)
+library(corrplot)
 library(AppliedPredictiveModeling)
 require(stats); require(graphics);require(ggplot2);require(GGally)
 
@@ -38,33 +39,6 @@ This project aims to bridge that gap by analyzing data collected from six partic
 
 
 # 2. Data Cleaning and Preprocessing
-
-
-
-# 3. Pre-Processing
-Preprocessing the data is crucial to ensure the model's accuracy and performance. The following steps were taken:
-
-Removal of Near-Zero Variance Predictors: Variables with very little variance were removed as they provide little to no information for model training.
-Handling Missing Data: Columns with excessive missing values (more than 50% NA) were excluded from the dataset.
-Removing Irrelevant Columns: Columns like user_name, raw_timestamp_part_1, raw_timestamp_part_2, and cvtd_timestamp were removed as they don't contribute to predicting "classe".
-Factorizing the Target Variable: The "classe" variable was converted to a factor to ensure it was treated as a categorical variable.
-
-
-
-# 4. Data Splitting 
-
-
-## Predictors and Data Reduction: 
-Improves model stability by removing redundant information. Highly correlated predictors can cause issues like multicollinearity, which can affect the stability and interpretability of your model
-
-Correlation Matrix: Helps to understand the relationships between numeric predictors. findCorrelation Function: Efficiently identifies and removes highly correlated predictors based on a specified threshold. Data Reduction: Improves model stability by removing redundant information.
-
-
-
-# 5. Modeling
-
-## Random Forest
-
 ```{r echo=FALSE,include=TRUE ,message=FALSE}
 # Load and prepare data
 url <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
@@ -80,7 +54,43 @@ testing <- dataTest[, colSums(is.na(dataTest)) == 0]
 # Remove irrelevant columns
 training <- training[,-c(1:7)]
 testing <- testing[,-c(1:7)]
+```
 
+
+# 3. Pre-Processing
+Preprocessing the data is crucial to ensure the model's accuracy and performance. The following steps were taken:
+
+Removal of Near-Zero Variance Predictors: Variables with very little variance were removed as they provide little to no information for model training.
+Handling Missing Data: Columns with excessive missing values (more than 50% NA) were excluded from the dataset.
+Removing Irrelevant Columns: Columns like user_name, raw_timestamp_part_1, raw_timestamp_part_2, and cvtd_timestamp were removed as they don't contribute to predicting "classe".
+Factorizing the Target Variable: The "classe" variable was converted to a factor to ensure it was treated as a categorical variable.
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+
+
+# Calculate and reduce correlated predictors
+correlation_matrix <- cor(training[, -ncol(training)]) # Exclude target 'classe'
+high_cor <- findCorrelation(correlation_matrix, cutoff = 0.9)
+
+corrplot(correlation_matrix, method = "square",
+         title = "Correlation Matrix of Training Data")
+
+# Remove the correlated predictors
+trainData_reduced <- training[, -high_cor]
+testData_reduced <- testing[, -high_cor]
+
+# Recalculate the correlation matrix
+cor_matrix_reduced <- cor(trainData_reduced[, -ncol(trainData_reduced)])
+summary(cor_matrix_reduced[upper.tri(cor_matrix_reduced)])
+
+
+
+
+```
+
+
+# 4. Data Splitting 
+
+```{r echo=FALSE,include=TRUE ,message=FALSE}
 # Ensure 'classe' is a factor
 training$classe <- as.factor(training$classe)
 
@@ -89,18 +99,30 @@ set.seed(123)
 trainIndex <- createDataPartition(training$classe, p = 0.7, list = FALSE)
 trainData <- training[trainIndex, ]
 testData <- training[-trainIndex, ]
+```
 
+
+## Predictors and Data Reduction: 
+Improves model stability by removing redundant information. Highly correlated predictors can cause issues like multicollinearity, which can affect the stability and interpretability of your model
+
+Correlation Matrix: Helps to understand the relationships between numeric predictors. findCorrelation Function: Efficiently identifies and removes highly correlated predictors based on a specified threshold. Data Reduction: Improves model stability by removing redundant information.
+
+
+
+# 5. Modeling
+
+## Random Forest 
+```{r echo=FALSE,include=TRUE ,message=FALSE}
 # Train Random Forest model
+
 RF_train_control <- trainControl(method = "cv", number = 10)
-rf_model <- train(classe ~ ., data = trainData, method = "rf", trControl = RF_train_control)
-
-# Predict and evaluate
-predictions <- predict(rf_model, newdata = testData)
-cm <- confusionMatrix(predictions, testData$classe)
-
-# Check confusion matrix
-print(cm)
-
+set.seed(123)
+rf_model <- train(classe ~ ., 
+                  data = trainData,
+                  method = "rf", 
+                  trControl = RF_train_control)
+print("Random Forest")
+print(rf_model)
 ```
 
 
@@ -118,6 +140,7 @@ gbm_model <- train(classe ~ ., data = trainData,
                    verbose = FALSE)
 
 # Print the model details
+print("Gradient Boosting")
 print(gbm_model)
 
 # Predict on test data
@@ -168,7 +191,23 @@ summary(resamples)
 ```
 
 # 6. Model Evaluation - Random Forest
-The Random Forest model's performance was evaluated using the test set, which was not used during training.
+Due to the slightly higher performance, random forest model will be used to evaluate the test set 
+
+
+### confusionMatrix
+```{r echo=FALSE,include=TRUE ,message=FALSE}
+# Predict and evaluate
+predictions <- predict(rf_model, newdata = testData)
+
+#convert the classe column in the testData dataframe to a factor with the same levels as the predictions vector
+testData$classe <- factor(testData$classe, levels = levels(predictions))
+
+cm <- confusionMatrix(predictions, testData$classe)
+
+# Check confusion matrix
+print(cm)
+
+```
 
 ### test set -validation random forest 
 ```{r echo=FALSE,include=TRUE ,message=FALSE}
@@ -258,10 +297,19 @@ kable(mean_accuracy,caption = "mean accuracy")
 ```
 
 
-7. Predictions - test 
+# 7. Predictions - test 
 ```{r echo=FALSE,include=TRUE ,message=FALSE}
 
  predict(rf_model,newdata=testing)
+
+
+
+```
+
+```{r echo=FALSE,include=TRUE ,message=FALSE, fig.align='center' }
+
+
+
 
 ```
 8. Conclusion. 
