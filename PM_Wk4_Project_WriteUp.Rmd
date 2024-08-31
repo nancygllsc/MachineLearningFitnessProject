@@ -1,6 +1,10 @@
 ---
-title: Practical Machine Learning Project Report
-output: html_document
+title: "Fit_Project_MachineLearning"
+author: "Nancy"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ## Introduction  

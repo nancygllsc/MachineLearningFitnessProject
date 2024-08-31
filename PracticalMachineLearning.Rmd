@@ -1,8 +1,10 @@
 ---
-title: "Practical Machine Learning Project"
-author: "Steven Myers"
-date: "September 17, 2017"
-output: html_document
+title: "Fit_Project_MachineLearning"
+author: "Nancy"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
